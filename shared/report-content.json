@@ -1,0 +1,43 @@
+{
+  "basic": {
+    "title": "Basic",
+    "description": "",
+    "features": [
+      "Ads history",
+      "Mileage",
+      "Plate changes",
+      "Owner history",
+      "Value"
+    ],
+    "excluded": [
+      "Damages",
+      "Stolen check",
+      "Service history",
+      "Finance check",
+      "Option list"
+    ]
+  },
+  "full": {
+    "title": "Full",
+    "description": "",
+    "features": [
+      "Damages",
+      "Ads history",
+      "Mileage",
+      "Stolen check",
+      "Plate changes",
+      "Owner history",
+      "Finance check",
+      "Value"
+    ],
+    "excluded": []
+  },
+  "turnaround": "",
+  "supportEmail": "",
+  "businessName": "",
+  "businessAddress": "",
+  "reviews": [],
+  "privacy": [],
+  "terms": [],
+  "refunds": []
+}

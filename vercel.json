@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/service.js": { "includeFiles": "dist/index.html", "maxDuration": 60 }
+  },
+  "routes": [
+    { "src": "/api(?:/.*)?", "dest": "/api/service" },
+    { "src": "/$", "dest": "/api/service" },
+    { "handle": "filesystem" },
+    { "src": "/.*", "dest": "/api/service" }
+  ],
+  "crons": [{ "path": "/api/outbox", "schedule": "0 3 * * *" }]
+}

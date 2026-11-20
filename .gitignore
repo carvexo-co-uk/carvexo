@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-server/
+.data/
+.env
+.env.*
+!.env.example
+.sites-runtime/
+.openai/local*
+*.blend1
+__pycache__/
+
+.vercel/
