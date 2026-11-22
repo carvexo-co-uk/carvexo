@@ -27,6 +27,12 @@ unset carvexo_admin_password
 
 ## Admin and emails
 
+### Local PayPal Sandbox demo
+
+Use a PayPal Sandbox REST app and a separate Sandbox personal buyer account. In the local `.env`, set `CARVEXO_PUBLIC_ORIGIN` to the exact browser origin printed by Vite, normally `http://localhost:5173`. Set `PAYPAL_ENVIRONMENT=sandbox`, the sandbox app's `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`, and optionally `PAYPAL_BRAND_NAME="Apex Design"`. Leave `PAYPAL_WEBHOOK_ID` empty. If you configure `PAYPAL_MERCHANT_ID`, use the sandbox seller's ID. Keep `CARVEXO_MAIL_MODE=capture` to preview emails locally.
+
+Restart the dev server, open `/admin`, and go to Payments → PayPal → Check connection. Select PayPal and save. Start a new checkout and sign in with the sandbox buyer. Complete the checkout and return to the local site in the same browser to let the server capture and verify the sandbox payment. This path requires a browser return, so it does not demonstrate asynchronous webhook settlement. [PayPal Sandbox accounts](https://developer.paypal.com/tools/sandbox/accounts/)
+
 Use `/admin` to search leads and orders, view notification attempts, retry failed emails, and mark verified live reports sent after emailing the report manually. Edit the public content, SEO, packages, contact and notification settings from the corresponding tabs. Package prices and features are saved with each order.
 
 Owner notifications and customer Reply-To default to `carvexo.co.uk@gmail.com`. For real inbox delivery, set `CARVEXO_MAIL_MODE=resend`, `RESEND_API_KEY` and `CARVEXO_MAIL_FROM` with a sender authorized by Resend. Demo and live checkouts can both send emails when that transport is configured. Test one demo order with an authorized test buyer before presenting it to the client. Capture mode stores preview messages instead. [Sender setup](https://resend.com/docs/send-with-nodejs)
@@ -39,7 +45,8 @@ Owner notifications and customer Reply-To default to `carvexo.co.uk@gmail.com`. 
 4. Demo checkout is enabled on first run. Add approved business and support details, policy text and delivery wording in admin before accepting real orders. Indexing is opt-in with `CARVEXO_ALLOW_INDEXING=true` on a live-ready deployment.
 5. Configure each payment integration server-side. Use unique sandbox and live deployments or databases. Select the provider through Admin → Payments after its connection check succeeds. Use the provider's test instruments before enabling live checkout.
    - **Stripe** uses `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` and `STRIPE_WEBHOOK_SECRET`. Configure `/api/webhooks/stripe` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, and `checkout.session.expired`. Existing PaymentIntent webhooks remain supported for legacy orders. [Stripe webhook setup](https://docs.stripe.com/checkout/fulfillment)
-   - **PayPal** uses `PAYPAL_ENVIRONMENT` (`sandbox` or `live`), `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `PAYPAL_WEBHOOK_ID`. Configure `/api/webhooks/paypal` for `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.PENDING` and `PAYMENT.CAPTURE.DENIED`. [PayPal webhook setup](https://developer.paypal.com/payment-methods/webhooks/)
+   - **PayPal** uses `PAYPAL_ENVIRONMENT` (`sandbox` or `live`), `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `PAYPAL_WEBHOOK_ID` from the same REST app and environment. Configure `/api/webhooks/paypal` for `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.PENDING` and `PAYMENT.CAPTURE.DENIED`. [PayPal webhook setup](https://developer.paypal.com/payment-methods/webhooks/)
+   - Set `PAYPAL_MERCHANT_ID` to the intended account's PayPal Merchant ID to verify the recipient of each order. Use the sandbox seller's ID on the sandbox deployment and the approved business profile's ID on production. Set `PAYPAL_BRAND_NAME` to request a buyer-facing checkout label, such as `Apex Design`. PayPal account and statement details are managed in PayPal.
 6. Once real merchant setup, webhook delivery, and the authorized sender are verified, set `CARVEXO_PRODUCTION_APPROVED=true`. Live checkout also needs the Atlas URI, HTTPS origin, and Resend transport. Use Admin → Payments to select the provider, and disable the Cash on Delivery demo as appropriate. The optional `CARVEXO_TAWK_WIDGET` flag accepts the existing Tawk.to `propertyId/widgetId`.
 
 ## Car model and fallback

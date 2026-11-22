@@ -120,7 +120,7 @@ export function makeApp({ config, store, wake = () => {}, stripe, paypal, static
     res.json({ order: orderView(order) });
   });
   app.post('/api/webhooks/paypal', async (req, res) => {
-    if (!paypal) return res.sendStatus(404);
+    if (!paypal || !config.paypal.webhookId) return res.sendStatus(404);
     if (!await paypal.verify(req)) throw new RequestError(400, 'Invalid webhook signature.');
     const order = await applyPayPalEvent(store, paypal, req.body, gateways.paypal);
     if (order) wake(order.ref);

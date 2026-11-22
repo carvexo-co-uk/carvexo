@@ -4,6 +4,8 @@ export function loadConfig(env = process.env) {
   const mode = env.CARVEXO_PAYMENT_MODE || 'demo';
   const emailMode = env.CARVEXO_MAIL_MODE || 'capture';
   const publicOrigin = env.CARVEXO_PUBLIC_ORIGIN || '';
+  const localDevelopment = !env.VERCEL && env.NODE_ENV !== 'production'
+    && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(publicOrigin);
   const live = mode === 'stripe-live' || env.CARVEXO_PRODUCTION_APPROVED === 'true';
   if (!['demo', 'stripe-test', 'stripe-live'].includes(mode)) throw new Error('Invalid CARVEXO_PAYMENT_MODE.');
   if (!['capture', 'resend'].includes(emailMode)) throw new Error('Invalid CARVEXO_MAIL_MODE.');
@@ -42,6 +44,9 @@ export function loadConfig(env = process.env) {
       clientId: env.PAYPAL_CLIENT_ID || '',
       secret: env.PAYPAL_CLIENT_SECRET || '',
       webhookId: env.PAYPAL_WEBHOOK_ID || '',
+      brandName: (env.PAYPAL_BRAND_NAME || '').trim(),
+      merchantId: (env.PAYPAL_MERCHANT_ID || '').trim(),
+      returnOnly: localDevelopment && env.PAYPAL_ENVIRONMENT !== 'live' && !env.PAYPAL_WEBHOOK_ID,
     },
     mailKey: env.RESEND_API_KEY,
     from: env.CARVEXO_MAIL_FROM || 'Carvexo <carvexo@example.test>',

@@ -8,7 +8,7 @@ const stripeEvents = ['checkout.session.completed', 'checkout.session.async_paym
 const refPattern = /^CVX-[A-F0-9]{20}$/;
 
 export function makePayPal(config, fetchApi = fetch) {
-  const { environment, clientId, secret, webhookId } = config.paypal;
+  const { environment, clientId, secret, webhookId, brandName, merchantId } = config.paypal;
   const base = environment === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
   const send = async (path, options) => {
     const response = await fetchApi(base + path, { ...options, signal: AbortSignal.timeout(9000) });
@@ -18,7 +18,7 @@ export function makePayPal(config, fetchApi = fetch) {
   };
   let token;
   let expiresAt = 0;
-  async function call(path, body, idempotency) {
+  async function authenticate() {
     if (Date.now() >= expiresAt) {
       const auth = await send('/v1/oauth2/token', {
         method: 'POST', headers: {
@@ -26,26 +26,47 @@ export function makePayPal(config, fetchApi = fetch) {
           'Content-Type': 'application/x-www-form-urlencoded',
         }, body: 'grant_type=client_credentials',
       });
+      if (typeof auth.access_token !== 'string' || !auth.access_token) {
+        throw new RequestError(502, 'PayPal did not return an access token.');
+      }
       token = auth.access_token;
       expiresAt = Date.now() + Math.max(0, auth.expires_in - 60) * 1000;
     }
+    return token;
+  }
+  async function call(path, body, idempotency) {
+    const accessToken = await authenticate();
     return send(path, {
       method: body ? 'POST' : 'GET',
-      headers: { Authorization: 'Bearer ' + token, ...(body ? { 'Content-Type': 'application/json' } : {}),
+      headers: { Authorization: 'Bearer ' + accessToken, ...(body ? { 'Content-Type': 'application/json' } : {}),
         ...(idempotency ? { 'PayPal-Request-Id': idempotency } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
   }
+  async function get(id) {
+    const payment = await call('/v2/checkout/orders/' + encodeURIComponent(id));
+    if (merchantId && (payment.purchase_units?.length !== 1
+      || payment.purchase_units[0].payee?.merchant_id !== merchantId)) {
+      throw new RequestError(502, 'PayPal returned an order for a different or unverified merchant.');
+    }
+    return payment;
+  }
   return {
-    get: id => call('/v2/checkout/orders/' + encodeURIComponent(id)),
-    create(order, urls) {
-      return call('/v2/checkout/orders', {
+    async checkCredentials() { await authenticate(); },
+    get,
+    async create(order, urls) {
+      const payment = await call('/v2/checkout/orders', {
         intent: 'CAPTURE',
         purchase_units: [{ reference_id: order.ref, custom_id: order.ref, description: 'CARVEXO ' + order.packageTitle,
           amount: { currency_code: 'GBP', value: (order.amount / 100).toFixed(2) } }],
-        payment_source: { paypal: { experience_context: { shipping_preference: 'NO_SHIPPING', user_action: 'PAY_NOW',
-          return_url: urls.success, cancel_url: urls.cancel } } },
+        payment_source: { paypal: { experience_context: {
+          ...(brandName ? { brand_name: brandName } : {}),
+          shipping_preference: 'NO_SHIPPING', user_action: 'PAY_NOW',
+          return_url: urls.success, cancel_url: urls.cancel,
+        } } },
       }, 'cvx-' + order.ref.slice(4) + '-' + (order.paymentVersion ?? 0));
+      if (merchantId && payment.id) await get(payment.id);
+      return payment;
     },
     capture: id => call('/v2/checkout/orders/' + encodeURIComponent(id) + '/capture', {}, 'capture-' + id),
     webhook: () => call('/v1/notifications/webhooks/' + encodeURIComponent(webhookId)),
@@ -64,7 +85,8 @@ export function gatewayState(config) {
   const stripeTest = /^(sk|rk)_test_/.test(config.secretKey) && config.publishableKey.startsWith('pk_test_');
   const stripeLive = /^(sk|rk)_live_/.test(config.secretKey) && config.publishableKey.startsWith('pk_live_');
   const stripe = (stripeTest || stripeLive) && config.webhookSecret.startsWith('whsec_');
-  const paypal = !!(config.paypal.clientId && config.paypal.secret && config.paypal.webhookId);
+  const paypal = !!(config.paypal.clientId && config.paypal.secret
+    && (config.paypal.webhookId || config.paypal.returnOnly));
   return {
     stripe: { configured: stripe, live: stripeLive, ready: stripe && (!stripeLive || config.liveReady) },
     paypal: { configured: paypal, live: config.paypal.environment === 'live',
@@ -83,6 +105,10 @@ export function selectedMode(payment, gateways) {
 export async function checkGateway(provider, gateways, config, stripe, paypal) {
   if (!gateways[provider]?.ready || !config.publicOrigin) {
     throw new RequestError(409, 'Configure this provider, its webhook and the public origin on the server first.');
+  }
+  if (provider === 'paypal' && config.paypal.returnOnly) {
+    await paypal.checkCredentials();
+    return { verified: true, environment: 'sandbox', webhookVerified: false };
   }
   const url = config.publicOrigin + '/api/webhooks/' + provider;
   let ready;

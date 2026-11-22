@@ -9,6 +9,7 @@ import Stripe from 'stripe';
 import { registrationFrom } from '../shared/catalog.js';
 import { makeApp } from '../server/app.js';
 import { loadConfig } from '../server/config.js';
+import { gatewayState, makePayPal } from '../server/gateways.js';
 import { drainNotifications } from '../server/mail.js';
 import { hashPassword } from '../server/admin-auth.js';
 import { openOrders } from '../server/store.js';
@@ -203,6 +204,92 @@ test('admin edits publish, order snapshots survive edits, and parallel saves det
   assert.equal((await admin('/orders?q=AB12CDE')).orders[0].ref, old.ref);
   assert.equal((await admin('/orders?q=%5B')).orders.length, 0);
   assert.equal((await admin('/orders/' + old.ref + '/sent', { method: 'POST' })).status, 409);
+});
+
+test('localhost PayPal Sandbox captures on browser return without a webhook', async context => {
+  const credentials = { PAYPAL_CLIENT_ID: 'fixture', PAYPAL_CLIENT_SECRET: 'fixture' };
+  const origin = 'http://localhost:5173';
+  for (const config of [
+    { CARVEXO_PUBLIC_ORIGIN: 'https://carvexo.example.test' },
+    { CARVEXO_PUBLIC_ORIGIN: origin, PAYPAL_ENVIRONMENT: 'live' },
+    { CARVEXO_PUBLIC_ORIGIN: origin, NODE_ENV: 'production' },
+  ]) {
+    assert.equal(gatewayState(loadConfig({ ...credentials, ...config })).paypal.configured, false);
+  }
+
+  let payment;
+  let checks = 0;
+  let captures = 0;
+  const paypal = {
+    async checkCredentials() { checks++; },
+    async create(order, urls) {
+      assert.equal(urls.success, origin + '/confirmation');
+      payment = {
+        id: 'LOCALPAYPAL123', status: 'PAYER_ACTION_REQUIRED',
+        links: [{ rel: 'payer-action', href: 'https://www.sandbox.paypal.com/checkout' }],
+        purchase_units: [{ reference_id: order.ref, custom_id: order.ref,
+          amount: { currency_code: 'GBP', value: '20.00' } }],
+      };
+      return payment;
+    },
+    async get() { return payment; },
+    async capture() {
+      captures++;
+      payment.status = 'COMPLETED';
+      payment.purchase_units[0].payments = { captures: [{
+        id: 'LOCALCAPTURE123', status: 'COMPLETED', amount: { currency_code: 'GBP', value: '20.00' },
+      }] };
+    },
+  };
+  const { request, admin } = await owner(context, { ...credentials, CARVEXO_PUBLIC_ORIGIN: origin }, undefined, paypal);
+  const check = await admin('/payments/paypal/check', { method: 'POST' });
+  assert.equal(check.status, 200);
+  assert.equal(check.webhookVerified, false);
+  const { settings } = await admin('/settings');
+  settings.payment.provider = 'paypal';
+  assert.equal((await admin('/settings', { method: 'PUT', input: settings })).status, 200);
+  assert.equal(checks, 2);
+  const { input, credentials: buyerToken } = buyer('AB12 CDE', 'basic');
+  const { order } = await request('/orders', { method: 'POST', input, credentials: buyerToken });
+  const via = (path) => request('/orders/' + order.ref + path, { method: 'POST', credentials: buyerToken, input: {} });
+  assert.equal((await via('/payment')).url, 'https://www.sandbox.paypal.com/checkout');
+  assert.equal((await via('/return')).order.status, 'pending');
+  payment.status = 'APPROVED';
+  const complete = await via('/return');
+  assert.equal(complete.order.status, 'paid');
+  assert.equal(complete.order.fulfilment, 'sandbox_payment');
+  await via('/return');
+  assert.equal(captures, 1);
+  assert.equal((await request('/webhooks/paypal', { method: 'POST', input: {} })).status, 404);
+});
+
+test('PayPal checks the configured recipient before returning a checkout order', async () => {
+  const config = loadConfig({
+    PAYPAL_CLIENT_ID: 'fixture', PAYPAL_CLIENT_SECRET: 'fixture',
+    PAYPAL_BRAND_NAME: 'Apex Design', PAYPAL_MERCHANT_ID: 'EXPECTED12345',
+  });
+  let payee = 'WRONG12345678';
+  const paypal = makePayPal(config, async (url, request) => {
+    const path = new URL(url).pathname;
+    if (path === '/v1/oauth2/token') return Response.json({ access_token: 'fixture', expires_in: 300 });
+    if (path === '/v2/checkout/orders') {
+      const input = JSON.parse(request.body);
+      assert.equal(input.payment_source.paypal.experience_context.brand_name, 'Apex Design');
+      assert.deepEqual(input.purchase_units[0].amount, { currency_code: 'GBP', value: '20.00' });
+      assert.equal(input.purchase_units[0].payee, undefined);
+      return Response.json({ id: 'PAYPALORD123' });
+    }
+    assert.equal(path, '/v2/checkout/orders/PAYPALORD123');
+    return Response.json({ id: 'PAYPALORD123', purchase_units: [{ payee: { merchant_id: payee } }] });
+  });
+  const create = () => paypal.create({ ref: 'CVX-123', packageTitle: 'Basic', amount: 2000 }, {
+    success: 'https://carvexo.example.test/confirmation', cancel: 'https://carvexo.example.test/confirmation?cancelled=1',
+  });
+  await assert.rejects(create, /different or unverified merchant/);
+  payee = 'EXPECTED12345';
+  assert.equal((await create()).id, 'PAYPALORD123');
+  payee = 'WRONG12345678';
+  await assert.rejects(paypal.get('PAYPALORD123'), /different or unverified merchant/);
 });
 
 test('PayPal sandbox checkout verifies the captured amount, reuses the provider order and handles cancellation', async context => {

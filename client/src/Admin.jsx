@@ -136,7 +136,9 @@ function PaymentFields({ settings, gateways, mailMode, change }) {
     setChecks(previous => ({ ...previous, [provider]: { busy: true, text: '' } }));
     try {
       const result = await request('/admin/payments/' + provider + '/check', 'POST');
-      setChecks(previous => ({ ...previous, [provider]: { text: 'Connection and webhook verified · ' + result.environment } }));
+      const verified = result.webhookVerified === false ? 'Sandbox connection verified · Local return only'
+        : 'Connection and webhook verified · ' + result.environment;
+      setChecks(previous => ({ ...previous, [provider]: { text: verified } }));
     } catch (error) {
       setChecks(previous => ({ ...previous, [provider]: { text: error.message } }));
     }
