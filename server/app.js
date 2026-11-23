@@ -27,7 +27,7 @@ export function makeApp({ config, store, wake = () => {}, stripe, paypal, static
     crossOriginResourcePolicy: { policy: 'same-site' },
     contentSecurityPolicy: {
       directives: {
-        scriptSrc: ["'self'", "'wasm-unsafe-eval'", 'https://js.stripe.com', 'https://*.js.stripe.com', 'https://*.tawk.to'], ["'self'", 'https://js.stripe.com', 'https://*.js.stripe.com', 'https://*.tawk.to'],
+        scriptSrc: ["'self'", "'wasm-unsafe-eval'", 'https://js.stripe.com', 'https://*.js.stripe.com', 'https://*.tawk.to'],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://*.tawk.to'],
         fontSrc: ["'self'", 'data:', 'https://*.tawk.to'],
         imgSrc: ["'self'", 'data:', 'blob:', 'https://*.tawk.to', 'https://*.stripe.com'],
